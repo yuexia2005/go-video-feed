@@ -40,7 +40,7 @@
 ### 本地运行
 
 ```bash
-git clone https://github.com/your-username/video_feed.git
+git clone https://github.com/yuexia2005/studygo
 cd video_feed
 
 # 安装依赖
