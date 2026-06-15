@@ -10,8 +10,8 @@ import (
 
 // 定义了一个名RegisterInput 的结构体，用于接收和验证用户注册请求的 JSON 数据
 type RegisterInput struct {
-	Username string `json:"username"binding:"required"`
-	Password string `json:"password"binding:"required,min=6"`
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required,min=6"`
 }
 
 // 将请求体的json数据绑定到input上
@@ -38,8 +38,9 @@ func Register(c *gin.Context) {
 	}
 	if err := models.DB.Create(&user).Error; err != nil {
 		c.JSON(500, gin.H{"error": "注册失败"})
+		return
 	}
-	c.JSON(500, gin.H{"message": "注册成功"})
+	c.JSON(200, gin.H{"message": "注册成功"})
 }
 
 // 登陆

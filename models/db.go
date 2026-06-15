@@ -27,12 +27,12 @@ func InitDB() {
 
 	password := os.Getenv("DB_PASSWORD")
 	if password == "" {
-		password = "YWePe20050209@"
+		log.Fatal("环境变量 DB_PASSWORD 未设置")
 	}
 
 	host := os.Getenv("DB_HOST")
 	if host == "" {
-		host = "10.69.174.223"
+		host = "10.151.248.223"
 	}
 
 	post := os.Getenv("DB_POST")
@@ -47,8 +47,7 @@ func InitDB() {
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local", user, password, host, post, dbname)
 
-	log.Printf("DSN: %s", dsn) // 注意：密码会明文打印，调试后可以删除
-
+	log.Printf("正在连接数据库")
 	//启用grom的sql日志(测试热点防击穿)
 	newLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags),
@@ -77,7 +76,7 @@ func InitDB() {
 func InitRedis() {
 	addr := os.Getenv("REDIS_ADDR")
 	if addr == "" {
-		addr = "localhost:6379"
+		addr = "redis:6379"
 	}
 	RDB = redis.NewClient(&redis.Options{
 		Addr: addr,
@@ -86,7 +85,7 @@ func InitRedis() {
 	ctx := context.Background()
 	var err error
 	for i := 0; i < 10; i++ {
-		if _, err := RDB.Ping(ctx).Result(); err != nil {
+		if _, err = RDB.Ping(ctx).Result(); err == nil {
 			log.Println("Redis 连接成功")
 			break
 		}
@@ -94,7 +93,7 @@ func InitRedis() {
 		time.Sleep(2 * time.Second)
 	}
 	if err != nil {
-		log.Printf("警告: Redis 最终连接失败: %v，服务继续运行但缓存功能不可用", err)
+		log.Printf("警告: Redis 最终连接失败: %v,服务继续运行但缓存功能不可用", err)
 		// 不 panic，让服务启动，但后续熔断器会处理
 	}
 

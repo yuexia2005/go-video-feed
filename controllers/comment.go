@@ -10,7 +10,11 @@ import (
 // 创建评论
 func CreateComment(c *gin.Context) {
 	//从上下文获取用户id
-	userIDRaw, _ := c.Get("user_id")
+	userIDRaw, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(401, gin.H{"error": "未登录"})
+		return
+	}
 	userID := userIDRaw.(uint)
 
 	//从URL路径参数获取视频id
@@ -118,7 +122,11 @@ func GetComments(c *gin.Context) {
 
 func DeleteComment(c *gin.Context) {
 	//从上下文获取用户id
-	userIDRaw, _ := c.Get("user_id")
+	userIDRaw, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(401, gin.H{"error": "未登录"})
+		return
+	}
 	userID := userIDRaw.(uint)
 
 	commentID, err := strconv.Atoi(c.Param("id"))

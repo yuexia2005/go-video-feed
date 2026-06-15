@@ -1,16 +1,22 @@
 package controllers
 
 import (
+	"encoding/json"
 	"log"
 	"path/filepath"
 	"video_feed/models"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 )
 
 func UploadVideo(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(401, gin.H{"error": "未登录"})
+		return
+	}
 	//获取表单数据
 	title := c.PostForm("title")
 	description := c.PostForm(("description"))
@@ -50,6 +56,30 @@ func UploadVideo(c *gin.Context) {
 	pipe.ZAdd(ctx, "hot:rank", redis.Z{Score: 0, Member: video.ID})
 	if _, err := pipe.Exec(ctx); err != nil {
 		log.Printf("Redis 缓存更新失败: %v", err)
+	}
+
+	// 发送 MQ 消息
+	//构造并序列化任务体：
+	taskBody, _ := json.Marshal(map[string]interface{}{
+		"video_id":  video.ID,
+		"file_path": video.FilePath,
+		"user_id":   video.UserID,
+	})
+
+	//发布消息到 RabbitMQ
+	err = models.MQChannel.Publish(
+		"",
+		"video_tasks",
+		false,
+		false,
+		amqp091.Publishing{
+			ContentType:  "application/json",
+			Body:         taskBody,
+			DeliveryMode: amqp091.Persistent,
+		},
+	)
+	if err != nil {
+		log.Printf("发送 MQ 消息失败: %v", err)
 	}
 
 	c.JSON(200, gin.H{"video_id": video.ID})

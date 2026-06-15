@@ -30,6 +30,9 @@ func SetupRouter() *gin.Engine {
 	//配置静态服务
 	r.Static("/uploads", "./uploads")
 	//公开路由
+	r.GET("/", func(c *gin.Context) {
+		c.File("./videofeed.html")
+	})
 	r.POST("/register", controllers.Register)
 	r.POST("/login", controllers.Login)
 

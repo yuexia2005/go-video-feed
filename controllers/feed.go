@@ -24,6 +24,8 @@ type FeedVideo struct {
 }
 
 func GetFeed(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	//获取userID
 	userIDRaw, exist := c.Get("user_id")
 	if !exist {
@@ -118,7 +120,7 @@ func GetFeed(c *gin.Context) {
 	if err == nil && len(videoIds) > 0 {
 		var result []FeedVideo
 		//查询数据库并存入result
-		models.DB.Table("videos").
+		models.DB.WithContext(ctx).Table("videos").
 			Select("videos.*,users.username").
 			Joins("LEFT JOIN users ON users.id = videos.user_id").
 			Where("videos.id IN ?", videoIds).
@@ -169,7 +171,7 @@ func GetFeed(c *gin.Context) {
 		//声明一个Video的结构体空切片，用于存储查询结果
 		var videos []FeedVideo
 		//一个构建好的查询构建器
-		query := models.DB.Table("videos").
+		query := models.DB.WithContext(ctx).Table("videos").
 			Select("videos.*,users.username").
 			Joins("LEFT JOIN users ON users.id = videos.user_id").
 			Order("videos.id DESC").
@@ -199,7 +201,7 @@ func GetFeed(c *gin.Context) {
 		go func() {
 			redisCtx := context.Background()
 			var allIDs []uint
-			models.DB.Model(&models.Video{}).Order("id DESC").Limit(100).Pluck("id", &allIDs)
+			models.DB.WithContext(context.Background()).Model(&models.Video{}).Order("id DESC").Limit(100).Pluck("id", &allIDs)
 			_, _ = models.RedisCB.Execute(func() (interface{}, error) {
 				//准备批量命令的容器
 				pipe := models.RDB.Pipeline()
