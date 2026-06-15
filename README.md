@@ -1,146 +1,172 @@
-# 视频 Feed 流后端服务
+# Video Feed - 短视频后端服务
 
-基于 Go + Gin + GORM + MySQL + Redis + Docker 构建的短视频后端服务，支持用户认证、视频发布与详情、Feed 流、热榜、评论、点赞等功能，并采用JWT鉴权与token失效控制，引入redis缓存，具备完善的高可用防护和容器化部署能力。
+基于 Go 构建的短视频后端服务，涵盖账号、视频发布、Feed 流、热榜、点赞、评论等核心功能，引入 Redis 缓存、RabbitMQ 异步处理、熔断降级与热点防击穿等方案，通过 Docker Compose 一键部署。
 
-## ✨ 功能特性
+## 技术栈
 
-- 用户注册/登录（JWT 认证）
-- 视频上传（文件保存至 `./uploads`）
-- Feed 流（游标分页 + Redis ZSet 缓存）
-- 热榜（基于点赞数排序）
-- 评论系统（发表、分页、删除）
-- 点赞/取消点赞
-- 删除视频（同步清理数据库、Redis、本地文件）
+| 层 | 技术 |
+|---|------|
+| 语言 | Go 1.21 |
+| Web 框架 | Gin |
+| ORM | GORM |
+| 数据库 | MySQL 8.0 |
+| 缓存 | Redis 7 |
+| 消息队列 | RabbitMQ |
+| 容器化 | Docker + Docker Compose |
 
-## 🛠 高可用亮点
+## 功能清单
 
-- **限流**：令牌桶中间件，保护系统免受突发流量冲击。
-- **防击穿**：singleflight 合并并发查询，保护数据库。
-- **熔断降级**：使用 gobreaker 对 Redis 操作熔断，故障时降级到数据库。
-- **优雅停机**：捕获 SIGTERM，等待现有请求完成再退出。
-- **健康检查**：`/health` 接口配合 Docker `healthcheck`。
-- **容器化**：Docker Compose 一键启动，`restart: always` 自动重启。
+- 用户注册 / 登录（JWT 鉴权，bcrypt 密码加密）
+- 视频上传（本地文件存储 + 数据库记录 + 缓存更新 + MQ 异步任务）
+- Feed 流（游标分页 + Redis ZSet 缓存 + singleflight 防击穿）
+- 热榜（Redis ZSet 排序 + 异步重建 + 熔断降级）
+- 点赞 / 取消点赞（Redis Set + MQ 异步落盘 + 事务保证一致性）
+- 评论系统（发表、游标分页查询、权限校验删除）
+- 视频删除（数据库 + Redis + 本地文件联动清理）
 
-## 📦 技术栈
+## 高可用设计
 
-- **语言**：Go 1.21
-- **Web 框架**：Gin
-- **ORM**：GORM
-- **数据库**：MySQL 8.0
-- **缓存**：Redis 7.0
-- **容器化**：Docker + Docker Compose
+| 机制 | 实现 | 说明 |
+|------|------|------|
+| 限流 | `golang.org/x/time/rate` | 已登录按用户 5 QPS，未登录按 IP 10 QPS |
+| 熔断降级 | `gobreaker` | Redis 故障时自动降级到数据库 |
+| 热点防击穿 | `singleflight` | 同参数并发请求合并为一次数据库查询 |
+| 异步解耦 | RabbitMQ | 点赞落盘异步化，提升接口响应 |
+| 优雅停机 | `signal.Notify` + `srv.Shutdown` | 等待现有请求完成再退出 |
+| 健康检查 | `/health` 端点 | 配合 Docker `healthcheck` 自动恢复 |
 
-## 🚀 快速启动
+## 项目结构
 
-### 前置条件
+```
+├── main.go                  # 入口，优雅停机
+├── Dockerfile
+├── docker-compose.yml
+├── Makefile
+├── models/                  # 数据模型与连接初始化（DB / Redis / MQ / CircuitBreaker）
+│   ├── db.go
+│   ├── mq.go
+│   ├── user.go
+│   ├── video.go
+│   ├── like.go
+│   └── comment.go
+├── controllers/             # 业务控制器
+│   ├── user.go              # 注册 / 登录
+│   ├── video.go             # 上传视频
+│   ├── feed.go              # Feed 流
+│   ├── hot.go               # 热榜
+│   ├── like.go              # 点赞
+│   ├── comment.go           # 评论
+│   └── delete_video.go      # 删除视频
+├── middleware/               # 中间件
+│   ├── auth.go              # JWT 鉴权
+│   └── rate_limit.go        # 限流
+├── mq_task/                 # MQ 消费者
+│   └── consumer.go
+├── utils/                   # 工具
+│   └── jwt.go
+├── routes/                  # 路由
+│   └── routes.go
+└── videofeed.html           # 前端页面
+```
 
-- Go 1.21+
-- Docker & Docker Compose（可选）
+## 快速开始
 
-### 本地运行
+### Docker 部署（推荐）
 
 ```bash
+# 克隆项目
 git clone https://github.com/yuexia2005/studygo
 cd video_feed
 
-# 安装依赖
-go mod tidy
-# 修改数据库连接配置（默认为 config 或环境变量，见下文）
-# 启动前请确保 MySQL 和 Redis 已启动且配置正确
+# 一键启动（MySQL + Redis + RabbitMQ + App）
+docker compose up -d --build
+
+# 访问
+http://localhost:8085
+```
+
+### 停止服务
+
+```bash
+docker compose down
+```
+
+### 本地运行（需要先启动 MySQL 和 Redis）
+
+```bash
+# 设置环境变量
+export DB_HOST=localhost
+export DB_PORT=3306
+export DB_USER=root
+export DB_PASSWORD=your_password
+export DB_NAME=video_feed
+export REDIS_ADDR=localhost:6379
+export JWT_SECRET=your_jwt_secret
+export RABBITMQ_URL=amqp://admin:password@localhost:5672/
 
 # 运行
-make build
-make run   # 或 go run main.go
+go run main.go
+```
 
-### Docker 一键部署（推荐）
-make docker
-该命令会自动构建镜像并启动三个容器：video_app、video_mysql、video_redis。
-运行后访问 http://localhost:8085（前端页面需单独打开 videofeed.html 文件）。
-停止服务：make docker-down
+## 环境变量
 
-##环境变量
-变量名	    说明	     默认值
-DB_HOST	    MySQL主机	localhost
-DB_PORT	    MySQL端口	3306
-DB_USER	    MySQL用户名	root
-DB_PASSWORD	MySQL密码	123456
-DB_NAME	    数据库名	video_feed
-REDIS_ADDR	Redis 地址	localhost:6379
+| 变量 | 说明 | 示例 |
+|------|------|------|
+| `DB_HOST` | MySQL 主机 | `mysql` |
+| `DB_PORT` | MySQL 端口 | `3306` |
+| `DB_USER` | MySQL 用户名 | `root` |
+| `DB_PASSWORD` | MySQL 密码 | `your_password` |
+| `DB_NAME` | 数据库名 | `video_feed` |
+| `REDIS_ADDR` | Redis 地址 | `redis:6379` |
+| `JWT_SECRET` | JWT 签名密钥 | `your_secret_key` |
+| `RABBITMQ_URL` | RabbitMQ 连接地址 | `amqp://admin:password@rabbitmq:5672/` |
 
+## API 概览
 
-##目录结构
-.
-├── main.go                 # 程序入口，优雅停机逻辑
-├── go.mod / go.sum
-├── Makefile                # 快捷命令
-├── Dockerfile
-├── docker-compose.yml
-├── README.md
-├── models/                 # 数据模型（User, Video, Like, Comment）
-├── controllers/            # 业务控制器（Feed, Hot, Comment, Like, Video）
-├── routes/                 # 路由注册与中间件
-├── middleware/             # 限流、认证等中间件
-├── utils/                  # JWT 工具函数
-├── uploads/                # 上传的视频文件存储目录（自动创建）
-└── videofeed.html          # 简易前端演示页面（可选）
+### 公开接口
 
-##API 示例
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/register` | 用户注册 |
+| POST | `/login` | 用户登录 |
+| GET | `/health` | 健康检查 |
 
-##注册
-bash
-POST /register
-Content-Type: application/json
+### 需认证接口（Header: `Authorization: Bearer <token>`）
 
-{
-    "username": "testuser",
-    "password": "123456"
-}
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/video/upload` | 上传视频 |
+| DELETE | `/api/video/:id` | 删除视频 |
+| GET | `/api/feed` | Feed 流（游标分页：`?last_id=0&limit=10`） |
+| GET | `/api/hot` | 热榜（`?limit=20`） |
+| POST | `/api/video/:id/like` | 点赞 / 取消点赞 |
+| POST | `/api/video/:id/comment` | 发表评论 |
+| GET | `/api/video/:id/comments` | 评论列表（游标分页：`?last_id=0&limit=5`） |
+| DELETE | `/api/comment/:id` | 删除评论 |
 
-##登录
-bash
-POST /login
-Content-Type: application/json
+### 注册
 
-{
-    "username": "testuser",
-    "password": "123456"
-}
-##响应：
-{"token": "eyJhbGciOiJIUzI1NiIsInR5..."}
+```bash
+curl -X POST http://localhost:8085/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"test","password":"123456"}'
+```
 
-##上传视频（需 token）
-POST /api/video/upload
-Authorization: Bearer <token>
-Content-Type: multipart/form-data
+### 登录
 
-title: 视频标题
-description: 视频描述
-video: <video_file>
-##响应：
-{"video_id": 1}
+```bash
+curl -X POST http://localhost:8085/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"test","password":"123456"}'
+```
 
-##获取 Feed 流（需 token）
-GET /api/feed?limit=5&last_id=0
-Authorization: Bearer <token>
-##响应：
-{"list": [...]}
+### Feed 流
 
+```bash
+curl http://localhost:8085/api/feed?limit=10 \
+  -H "Authorization: Bearer <token>"
+```
 
-##点赞/取消点赞
-bash
-POST /api/video/1/like
-Authorization: Bearer <token>
-##响应：
-{"liked": true, "like_count": 1}
+## License
 
-##获取热榜
-bash
-GET /api/hot?limit=10
-Authorization: Bearer <token>
-响应：
-{"list": [...]}
-
-更多接口（评论、删除视频等）请参阅源代码中的路由定义。
-
-##🤝 贡献
-欢迎提交 Issue 或 Pull Request。
+MIT

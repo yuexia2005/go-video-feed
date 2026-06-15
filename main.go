@@ -9,7 +9,9 @@ import (
 	"syscall"
 	"time"
 	"video_feed/models"
+	"video_feed/mq_task"
 	"video_feed/routes"
+	"video_feed/utils"
 )
 
 func main() {
@@ -18,7 +20,13 @@ func main() {
 	models.InitDB()
 	//初始化redis
 	models.InitRedis()
+	//初始化RabbitMQ
+	models.InitMQ()
+	defer models.CloseMQ()
+	//初始化JWT密钥
+	utils.InitJWTSecret()
 
+	mq_task.StartConsumer() // 开启后台消费者协程逻辑
 	//设置 Gin 路由
 	r := routes.SetupRouter()
 
